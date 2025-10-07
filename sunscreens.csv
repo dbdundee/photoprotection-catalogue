@@ -1,0 +1,3 @@
+id,brand,name,size_ml,price_gbp,spf_measured,uva_pf,block_UVA,block_UVB,block_HEV,block_VIS,water_resistant,filters,porphyria_note
+nivea_kids_rollon_spf50,NIVEA,Kids Protect & Care Roll-On,50,5.00,62,24,91,98,35,8,TRUE,Organic,"Moderate HEV/VIS blocking; consider mineral filters if higher visible attenuation needed."
+brandx_ultra_spf30,Brand X,Ultra Daily SPF30,150,12.00,28,12,82,96,15,5,FALSE,Mixed,"Lower HEV/VIS blocking."

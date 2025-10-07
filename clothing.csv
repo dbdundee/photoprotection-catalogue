@@ -1,0 +1,3 @@
+id,label,material,gsm,price_gbp,upf_measured,block_UVA,block_UVB,block_HEV,block_VIS,notes
+tesco_tshirt_white_large,"Tesco T-shirt (white, L)",Cotton,170,2.50,120,96,99,60,35,"Inexpensive garment with very high measured UPF."
+designer_upf50,"Designer UPF-50 Tee",Polyester,150,120.00,52,93,98,45,30,"Labelled UPF-50; not necessarily superior in all bands."
