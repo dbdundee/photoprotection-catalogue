@@ -1,64 +1,74 @@
 import pandas as pd
 import streamlit as st
+from pathlib import Path
 
 st.set_page_config(page_title="Photoprotection Catalogue", layout="wide")
 st.title("Photoprotection Catalogue")
 
-@st.cache_data
-def load_data():
-    suns = pd.read_csv("sunscreens.csv")   # see schema in the message
-    cloth = pd.read_csv("clothing.csv")
-    return suns, cloth
+DATA_XLSX = Path(__file__).parent / "photoprotection_catalogue_template.xlsx"
+SHEET_SUN = "Sunscreens"
+SHEET_CLO = "Clothing"
 
-suns, cloth = load_data()
+@st.cache_data
+def load_sheet(path: Path, sheet: str) -> pd.DataFrame:
+    df = pd.read_excel(path, sheet_name=sheet, engine="openpyxl")
+    df = df.loc[:, df.columns.tolist()]
+    df.columns = [str(c) for c in df.columns]
+    return df
+
+def make_label(row: pd.Series, kind: str) -> str:
+    brand = row.get("Product Brand", "")
+    name = row.get("Product Name", "")
+    extra = ""
+    if kind == "sun":
+        vol = row.get("Volume (ml)", "")
+        if str(vol).strip() not in {"", "nan"}:
+            extra = f" — {vol} ml"
+    elif kind == "cloth":
+        mat = row.get("Material", "")
+        if str(mat).strip() not in {"", "nan"}:
+            extra = f" — {mat}"
+    return f"{brand} — {name}{extra}".strip(" —")
+
+# Load sheets
+try:
+    suns = load_sheet(DATA_XLSX, SHEET_SUN)
+except Exception as e:
+    suns = pd.DataFrame()
+    st.warning(f"Could not load {SHEET_SUN}: {e}")
+
+try:
+    cloth = load_sheet(DATA_XLSX, SHEET_CLO)
+except Exception as e:
+    cloth = pd.DataFrame()
+    st.warning(f"Could not load {SHEET_CLO}: {e}")
 
 tab1, tab2 = st.tabs(["Sunscreens", "Clothing"])
 
 with tab1:
-    left, right = st.columns([2,1])
-    with left:
-        brands = suns["brand"].astype(str) + " — " + suns["name"].astype(str)
-        selected = st.multiselect("Choose up to 3 sunscreens", options=brands.unique().tolist(), max_selections=3)
-        if selected:
-            df = suns.loc[brands.isin(selected)].copy()
-            # cost per 100 ml
-            df["cost_per_100ml"] = (df["price_gbp"] / (df["size_ml"]/100)).round(2)
-            show = df[[
-                "brand","name","spf_measured","uva_pf",
-                "block_UVA","block_UVB","block_HEV","block_VIS",
-                "size_ml","price_gbp","cost_per_100ml","filters","water_resistant","porphyria_note"
-            ]].rename(columns={
-                "block_UVA":"% blocked UVA",
-                "block_UVB":"% blocked UVB",
-                "block_HEV":"% blocked HEV",
-                "block_VIS":"% blocked Visible",
-                "price_gbp":"£ price"
-            })
-            st.dataframe(show, use_container_width=True)
-        else:
-            st.info("Pick 1–3 items to compare.")
-    with right:
-        st.markdown("**Notes**")
-        st.write("- Measured SPF is from your lab testing.")
-        st.write("- Blocking values are % irradiance blocked.")
-        st.write("- Porphyria-relevant bands: UVA/UVB/HEV/Visible.")
+    st.caption(f"{SHEET_SUN} • {len(suns)} rows • {len(suns.columns)} columns")
+    if suns.empty:
+        st.info("Add data to the Sunscreens sheet.")
+    else:
+        labels = suns.apply(lambda r: make_label(r, "sun"), axis=1)
+        left, right = st.columns([2, 1])
+        with left:
+            chosen = st.multiselect("Choose up to 3 products", options=labels.tolist(), max_selections=3)
+        with right:
+            show_all = st.toggle("Show all products", value=(len(chosen) == 0))
+        view = suns if show_all else suns.loc[labels.isin(chosen), suns.columns.tolist()]
+        st.dataframe(view, use_container_width=True, hide_index=True)
 
 with tab2:
-    brands = cloth["label"].astype(str)
-    selected = st.multiselect("Choose up to 3 garments", options=brands.unique().tolist(), max_selections=3)
-    if selected:
-        df = cloth.loc[brands.isin(selected)].copy()
-        show = df[[
-            "label","material","gsm","upf_measured",
-            "block_UVA","block_UVB","block_HEV","block_VIS",
-            "price_gbp","notes"
-        ]].rename(columns={
-            "block_UVA":"% blocked UVA",
-            "block_UVB":"% blocked UVB",
-            "block_HEV":"% blocked HEV",
-            "block_VIS":"% blocked Visible",
-            "price_gbp":"£ price"
-        })
-        st.dataframe(show, use_container_width=True)
+    st.caption(f"{SHEET_CLO} • {len(cloth)} rows • {len(cloth.columns)} columns")
+    if cloth.empty:
+        st.info("Add data to the Clothing sheet.")
     else:
-        st.info("Pick 1–3 garments to compare.")
+        labels = cloth.apply(lambda r: make_label(r, "cloth"), axis=1)
+        left, right = st.columns([2, 1])
+        with left:
+            chosen = st.multiselect("Choose up to 3 garments", options=labels.tolist(), max_selections=3, key="cloth_sel")
+        with right:
+            show_all = st.toggle("Show all garments", value=(len(chosen) == 0), key="cloth_all")
+        view = cloth if show_all else cloth.loc[labels.isin(chosen), cloth.columns.tolist()]
+        st.dataframe(view, use_container_width=True, hide_index=True)
