@@ -12,6 +12,31 @@ DATA_XLSX = Path(__file__).parent / "photoprotection_catalogue_template.xlsx"
 SHEET_SUN = "Sunscreens"
 SHEET_CLO = "Clothing"
 
+# Columns shown to patients in the tables (NOW includes Image)
+SUN_DISPLAY_COLS = [
+    "Product Brand",
+    "Product Name",
+    "Price (£)",
+    "Volume (ml)",
+    "Price / ml",
+    "SPF (lab)",
+    "UVA Protection (Lab)",
+    "Blue Light Protection (lab)",
+    "Visible Protection (lab)",
+    "Image",
+]
+
+CLO_DISPLAY_COLS = [
+    "Product Brand",
+    "Product Name",
+    "Price (£)",
+    "SPF (lab)",
+    "UVA Protection (Lab)",
+    "Blue Light Protection (lab)",
+    "Visible Protection (lab)",
+    "Image",
+]
+
 
 # ----------------- DATA LOADING -----------------
 
@@ -46,6 +71,7 @@ def make_label(row: pd.Series, kind: str) -> str:
 
     label = " — ".join(x for x in [brand, name] if x)
     if not label:
+        # Fallback: first non-empty cell from the row
         for v in row.values:
             if str(v).strip():
                 label = str(v)
@@ -177,21 +203,7 @@ def build_clothing_comparison(df: pd.DataFrame) -> pd.DataFrame:
 
 # ----------------- PLOTTING HELPERS -----------------
 
-def plot_metric_bars(df: pd.DataFrame, col: str, title: str,
-                     y_label: str, decimals: int):
-    """
-    Render one grouped bar chart for a single metric column.
-
-    Plots in the left column of a 2-column layout so that
-    all charts are ~half the page width.
-    """
-    if col not in df.columns:
-        return
-
-    mdf = df[["Product", col]].copy().dropna(subset=[col])
-    if mdf.empty:
-        return
-
+def plotly_bar(mdf, col, title, y_label, decimals):
     fig = px.bar(
         mdf,
         x="Product",
@@ -205,13 +217,28 @@ def plot_metric_bars(df: pd.DataFrame, col: str, title: str,
         xaxis_title="Product",
         yaxis_title=y_label,
         legend_title="Product",
-        font=dict(size=15),        # increased from 13
-        title_font=dict(size=18),  # increased from 16
+        font=dict(size=17),
+        title_font=dict(size=20),
     )
+    return fig
 
-    # make this chart about half width: draw it in left col of a 2-col layout
-    col_left, _ = st.columns([1, 1])
-    col_left.plotly_chart(fig, use_container_width=True)
+
+def plot_metric_bars(df: pd.DataFrame, col: str, title: str,
+                     y_label: str, decimals: int, target_col):
+    """
+    Render one grouped bar chart for a single metric column into target_col.
+
+    Charts are sized for half-width columns (for side-by-side layout).
+    """
+    if col not in df.columns:
+        return
+
+    mdf = df[["Product", col]].copy().dropna(subset=[col])
+    if mdf.empty:
+        return
+
+    fig = plotly_bar(mdf, col, title, y_label, decimals)
+    target_col.plotly_chart(fig, use_container_width=True)
 
 
 def show_sunscreen_comparison(comp: pd.DataFrame):
@@ -225,16 +252,24 @@ def show_sunscreen_comparison(comp: pd.DataFrame):
         "and cost per ml for selected sunscreens."
     )
 
+    # Row 1 (two plots)
+    r1c1, r1c2 = st.columns(2)
     plot_metric_bars(comp, "SPF_lab (UVB)",
-                     "SPF (lab) – UVB protection", "SPF (lab)", 1)
+                     "SPF (lab) – UVB protection", "SPF (lab)", 1, r1c1)
     plot_metric_bars(comp, "UVA_PF_lab",
-                     "UVA Protection (Lab) – PF", "UVA PF (lab)", 1)
+                     "UVA Protection (Lab) – PF", "UVA PF (lab)", 1, r1c2)
+
+    # Row 2 (two plots)
+    r2c1, r2c2 = st.columns(2)
     plot_metric_bars(comp, "Blue_light_lab",
-                     "Blue light Protection (lab)", "Value", 2)
+                     "Blue light Protection (lab)", "Value", 2, r2c1)
     plot_metric_bars(comp, "Visible_lab",
-                     "Visible light Protection (lab)", "Value", 2)
+                     "Visible light Protection (lab)", "Value", 2, r2c2)
+
+    # Row 3 (single plot spanning)
+    r3c1, _ = st.columns([1, 1])
     plot_metric_bars(comp, "Price_per_ml_£",
-                     "Price per ml (£)", "£ per ml", 3)
+                     "Price per ml (£)", "£ per ml", 3, r3c1)
 
 
 def show_clothing_comparison(comp: pd.DataFrame):
@@ -248,16 +283,62 @@ def show_clothing_comparison(comp: pd.DataFrame):
         "and total price (£) for selected garments."
     )
 
+    # Row 1
+    r1c1, r1c2 = st.columns(2)
     plot_metric_bars(comp, "SPF_lab (UVB)",
-                     "SPF (lab) – UVB protection", "SPF (lab)", 1)
+                     "SPF (lab) – UVB protection", "SPF (lab)", 1, r1c1)
     plot_metric_bars(comp, "UVA_PF_lab",
-                     "UVA Protection (Lab) – PF", "UVA PF (lab)", 1)
+                     "UVA Protection (Lab) – PF", "UVA PF (lab)", 1, r1c2)
+
+    # Row 2
+    r2c1, r2c2 = st.columns(2)
     plot_metric_bars(comp, "Blue_light_lab",
-                     "Blue light Protection (lab)", "Value", 2)
+                     "Blue light Protection (lab)", "Value", 2, r2c1)
     plot_metric_bars(comp, "Visible_lab",
-                     "Visible light Protection (lab)", "Value", 2)
+                     "Visible light Protection (lab)", "Value", 2, r2c2)
+
+    # Row 3 (price only)
+    r3c1, _ = st.columns([1, 1])
     plot_metric_bars(comp, "Price_£",
-                     "Price (£)", "£", 2)
+                     "Price (£)", "£", 2, r3c1)
+
+
+# ----------------- IMAGE STRIP (WORKING VERSION) -----------------
+
+def show_product_images(df: pd.DataFrame, kind: str):
+    """
+    Display small thumbnails for the selected rows, using the 'Image' column.
+
+    - Uses st.image with local paths or URLs.
+    - Works reliably for your 'images/...' paths.
+    """
+    if df.empty or "Image" not in df.columns:
+        return
+
+    df_img = df[df["Image"].astype(str).str.strip() != ""]
+    if df_img.empty:
+        return
+
+    st.markdown("#### Product images")
+
+    cols = st.columns(len(df_img))
+    for col_widget, (_, row) in zip(cols, df_img.iterrows()):
+        img_ref = str(row.get("Image", "")).strip()
+        if not img_ref:
+            continue
+
+        # Resolve to URL or local file
+        if img_ref.lower().startswith(("http://", "https://")):
+            img_path = img_ref
+        else:
+            # treat as relative to app.py
+            img_path = Path(__file__).parent / img_ref
+
+        label = make_label(row, kind)
+        try:
+            col_widget.image(str(img_path), width=120, caption=label)
+        except Exception:
+            col_widget.write(label)
 
 
 # ----------------- LOAD SHEETS -----------------
@@ -275,6 +356,16 @@ except Exception as e:
     st.error(f"Could not load sheet '{SHEET_CLO}' from {DATA_XLSX.name}: {e}")
 
 
+# ----------------- HELPER: SAFE COLUMN SELECTION -----------------
+
+def safe_select_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Return df with only columns that actually exist."""
+    present = [c for c in cols if c in df.columns]
+    if not present:
+        return df.iloc[:, 0:0]  # empty with same index
+    return df[present].copy()
+
+
 # ----------------- UI: TABS -----------------
 
 tab1, tab2 = st.tabs(["Sunscreens", "Clothing"])
@@ -282,8 +373,6 @@ tab1, tab2 = st.tabs(["Sunscreens", "Clothing"])
 
 # ---- Sunscreens tab ----
 with tab1:
-    st.caption(f"{DATA_XLSX.name} • {SHEET_SUN} • {len(suns)} rows • {len(suns.columns)} columns")
-
     if suns.empty:
         st.info("No sunscreen data yet. Add rows to the 'Sunscreens' sheet.")
     else:
@@ -310,17 +399,25 @@ with tab1:
             mask = labels_sun.isin(chosen_sun)
             view_sun = suns.loc[mask, suns.columns.tolist()]
 
+        # Comparison plots (only when 2–3 products specifically selected)
         if not show_all_sun and 1 < len(view_sun) <= 3:
             comp_sun = build_sunscreen_comparison(view_sun)
             show_sunscreen_comparison(comp_sun)
 
-        st.dataframe(view_sun, width="stretch", hide_index=True)
+        # Thumbnails for the selected products
+        show_product_images(view_sun, kind="sun")
+
+        # Patient-facing table
+        view_sun_display = safe_select_columns(view_sun, SUN_DISPLAY_COLS)
+        st.dataframe(
+            view_sun_display,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 # ---- Clothing tab ----
 with tab2:
-    st.caption(f"{DATA_XLSX.name} • {SHEET_CLO} • {len(cloth)} rows • {len(cloth.columns)} columns")
-
     if cloth.empty:
         st.info("No clothing data yet. Add rows to the 'Clothing' sheet.")
     else:
@@ -351,4 +448,11 @@ with tab2:
             comp_cloth = build_clothing_comparison(view_cloth)
             show_clothing_comparison(comp_cloth)
 
-        st.dataframe(view_cloth, width="stretch", hide_index=True)
+        show_product_images(view_cloth, kind="cloth")
+
+        view_cloth_display = safe_select_columns(view_cloth, CLO_DISPLAY_COLS)
+        st.dataframe(
+            view_cloth_display,
+            use_container_width=True,
+            hide_index=True,
+        )
